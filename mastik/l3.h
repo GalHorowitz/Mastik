@@ -24,6 +24,7 @@
 
 #include <mastik/low.h>
 #include <mastik/mm.h>
+#include <mastik/lx.h>
 
 typedef void (*l3progressNotification_t)(int count, int est, void *data);
 struct l3info {
@@ -89,6 +90,11 @@ void l3_repeatedpabort(l3pp_t l3, int sample, int16_t *results, uint32_t time_li
 
 int loadL3cpuidInfo(l3info_t l3info);
 void fillL3Info(l3info_t l3info);
+
+vlist_t* l3_getGroups(l3pp_t l3);
+int l3_getNumGroups(l3pp_t l3);
+int l3_getGroupSize(l3pp_t l3);
+void l3_verify_evset(l3pp_t l3, vlist_t evset);
 
 #endif // __L3_H__
 

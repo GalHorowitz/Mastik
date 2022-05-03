@@ -17,8 +17,10 @@ FILES= \
 	L2-capture.c \
 	L2-rattle.c \
 	L2-sequence.c \
+	PS.c \
+	PS-prime-time.c \
 	ST-L2PP-AES.c
-	
+
 
 prefix=@prefix@
 exec_prefix=@exec_prefix@

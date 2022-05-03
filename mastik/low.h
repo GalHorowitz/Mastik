@@ -22,7 +22,7 @@
 
 #include <stdint.h>
 
-#define L3_THRESHOLD 140
+#define L3_THRESHOLD 200
 
 #ifdef PAGE_SIZE
 #undef PAGE_SIZE

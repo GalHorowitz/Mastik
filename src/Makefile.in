@@ -3,6 +3,8 @@ LIBSRCS= \
 	cb.c \
 	ff.c \
 	fr.c \
+	ps.c \
+	pt.c \
 	l1.c \
 	l1i.c \
 	l2.c \

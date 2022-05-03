@@ -172,6 +172,7 @@ l3pp_t l3_prepare(l3info_t l3info, mm_t mm) {
   
   l3->ngroups = l3->mm->l3ngroups;
   l3->groupsize = l3->mm->l3groupsize;
+  l3->groups = l3->mm->l3groups;
   
   // Allocate monitored set info
   l3->monitoredbitmap = (uint32_t *)calloc((l3->ngroups*l3->groupsize/32) + 1, sizeof(uint32_t));
@@ -285,4 +286,24 @@ void l3_repeatedpabort(l3pp_t l3, int sample, int16_t *results, uint32_t time_li
   do{ 
     results[cont] = l3_pabort(l3, time_limit);
   } while(cont++ < sample);
+}
+
+
+vlist_t* l3_getGroups(l3pp_t l3) {
+  return l3->groups;
+}
+
+int l3_getNumGroups(l3pp_t l3) {
+  return l3->ngroups;
+}
+
+int l3_getGroupSize(l3pp_t l3) {
+  return l3->groupsize;
+}
+
+void l3_verify_evset(l3pp_t l3, vlist_t evset) {
+  if(!pte_verify_evset(l3->mm, evset)) {
+    printf("[ERROR] l3_verify_evset failed\n");
+    exit(1);
+  }
 }

@@ -47,7 +47,7 @@
 static int ptemap(mm_t mm);
 static int probemap(mm_t mm);
 static int checkevict(vlist_t es, void *candidate);
-static uintptr_t getphysaddr(void *p);
+// static uintptr_t getphysaddr(void *p);
 
 static void* allocate_buffer(mm_t mm) {
   // Allocate cache buffer
@@ -67,6 +67,8 @@ static void* allocate_buffer(mm_t mm) {
     mm->l3groupsize = L3_SETS_PER_PAGE;
     mm->pagesize = 4096;
     buffer = mmap(NULL, bufsize, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+  } else {
+    puts("[MM] Got huge pages!");
   }
   if (buffer == MAP_FAILED) {
     perror("Error allocating buffer!\n");
@@ -160,10 +162,10 @@ static void mm_l3findlines(mm_t mm, int set, int count, vlist_t list) {
             vl_push(list, cand + groupOffset);
             if(--count == 0)
               return;
+          }
         }
-      }
-    } 
-  }
+      } 
+    }
     vl_push(mm->memory, allocate_buffer(mm));
   }
   return;
@@ -219,7 +221,7 @@ static int addr2slice_linear(uintptr_t addr, int slices) {
   return ((bit2 << 2) | (bit1 << 1) | bit0) & (slices - 1);
 }
 
-static uintptr_t getphysaddr(void *p) {
+uintptr_t getphysaddr(void *p) {
 #ifdef __linux__
   static int fd = -1;
 
@@ -233,7 +235,7 @@ static uintptr_t getphysaddr(void *p) {
   uintptr_t intp = (uintptr_t)p;
   int r = pread(fd, &buf, sizeof(buf), ((uintptr_t)p)/4096 * sizeof(buf));
 
-  return (buf & ((1ULL << 54) - 1)) << 12 | ((uintptr_t)p & 0x3ff);
+  return (buf & ((1ULL << 54) - 1)) << 12 | ((uintptr_t)p & 0xfff);
 #else
   return 0;
 #endif
@@ -263,6 +265,42 @@ static int ptemap(mm_t mm) {
   }
   return 1;
 }
+
+// #define DEBUG // FIXME: REMOVE
+int pte_verify_evset(mm_t mm, vlist_t evset) {
+  if (getphysaddr(mm->l3buffer) == 0) {
+    puts("No phys");
+    return 0;
+  }
+  if (mm->l3info.slices & (mm->l3info.slices - 1)) { // Cannot do non-linear for now
+    puts("Non linear");
+    return 0;
+  }
+  if(vl_len(evset) < 2) {
+    puts("Small evset");
+    return 0;
+  }
+  
+  uintptr_t phys = getphysaddr(vl_get(evset, 0));
+  int slice = addr2slice_linear(phys, mm->l3info.slices);
+  int cacheindex = ((phys / L3_CACHELINE) & (mm->l3info.sets - 1));
+#ifdef DEBUG
+  printf("pte_verify_evset of %d addresses: slice=%d, cache_idx=%d (%d)\n", vl_len(evset), slice, cacheindex, mm->l3info.sets);
+#endif // DEBUG
+  for(int i = 1; i < vl_len(evset); i++) {
+    phys = getphysaddr(vl_get(evset, i));
+    int alt_slice = addr2slice_linear(phys, mm->l3info.slices);
+    int alt_cacheindex = ((phys / L3_CACHELINE) & (mm->l3info.sets - 1));
+    if(alt_slice != slice || alt_cacheindex != cacheindex) {
+      //FIXME: REMOVE
+      printf("Expected: %d:%d Found: %d:%d\n", slice, cacheindex, alt_slice, alt_cacheindex);
+      return 0;
+    }
+  }
+
+  return 1;
+}
+#undef DEBUG // FIXME: REMOVE
 
 #define CHECKTIMES 16
 
@@ -454,7 +492,7 @@ static vlist_t map(mm_t mm, vlist_t lines) {
 #ifdef DEBUG
     int d_l3 = vl_len(es);
 #endif //DEBUG
-    if (vl_len(es) > mm->l3info.associativity || vl_len(es) < mm->l3info.associativity - 3) {
+    if (vl_len(es) > mm->l3info.associativity || vl_len(es) < mm->l3info.associativity) { // - 3) {
       vl_push(lines, c);
       while (vl_len(es))
         vl_push(lines, vl_del(es, 0));
@@ -503,7 +541,7 @@ static vlist_t quadraticmap(mm_t mm, vlist_t lines) {
 #endif //DEBUG
     if (c == NULL) {
       while (vl_len(es))
-	vl_push(lines, vl_del(es, 0));
+	      vl_push(lines, vl_del(es, 0));
 #ifdef DEBUG
       printf("set %3d: lines: %4d expanded: %4d c=NULL\n", vl_len(groups), d_l1, d_l2);
 #endif // DEBUG
@@ -516,7 +554,7 @@ static vlist_t quadraticmap(mm_t mm, vlist_t lines) {
 #ifdef DEBUG
     int d_l3 = vl_len(es);
 #endif //DEBUG
-    if (vl_len(es) > mm->l3info.associativity || vl_len(es) < mm->l3info.associativity - 3) {
+    if (vl_len(es) > mm->l3info.associativity || vl_len(es) < mm->l3info.associativity) { // - 3) {
       while (vl_len(es))
 	vl_push(lines, vl_del(es, 0));
 #ifdef DEBUG
@@ -543,6 +581,7 @@ static vlist_t quadraticmap(mm_t mm, vlist_t lines) {
   return groups;
 }
 
+#define DEBUG // FIXME: REMOVE
 static int probemap(mm_t mm) {
   if ((mm->l3info.flags & LXFLAG_NOPROBE) != 0)
     return 0;
@@ -567,12 +606,20 @@ static int probemap(mm_t mm) {
   mm->l3ngroups = vl_len(groups);
 
   mm->l3groups = (vlist_t *)calloc(mm->l3ngroups, sizeof(vlist_t));
-  for (int i = 0; i < vl_len(groups); i++)
+  for (int i = 0; i < vl_len(groups); i++) {
     mm->l3groups[i] = vl_get(groups, i);
+#ifdef DEBUG
+    if(!pte_verify_evset(mm, vl_get(groups, i))) {
+      printf("[ERROR] Failed to verify PTE %d\n", i);
+      exit(1);
+    }
+#endif // DEBUG
+  }
   vl_free(groups);
   vl_free(pages);
   return 1;
 }
+#undef DEBUG // FIXME: REMOVE
 
 void _mm_requestlines(mm_t mm, cachelevel_e cachelevel, int line, int count, vlist_t list) {
   switch (cachelevel) {

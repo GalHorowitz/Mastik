@@ -2,6 +2,7 @@ HEADERS= \
 	cb.h \
 	ff.h \
 	fr.h \
+	ps.h \
 	impl.h \
 	info.h \
 	l1.h \
